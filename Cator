@@ -1,0 +1,228 @@
+using System;
+using System.Collections;
+using Unity.Mathematics;
+using Unity.VisualScripting;
+using UnityEditor;
+using UnityEditor.Tilemaps;
+using UnityEngine;
+using UnityEngine.UIElements.Experimental;
+
+public class Cator_Behaviour : MonoBehaviour
+{
+    public Rigidbody2D rb;
+    public GameObject player;
+    public GameObject empty ;
+    public Animator animator ;
+    RectTransform rectTransform ;
+    public LayerMask floor ;
+    public LayerMask wall ;
+    public new Collider2D collider2D ;
+    public float mode ;
+    public float setSpeed ;
+    public float realSpeed;
+    public bool groundchecker ;
+    public float raycastLength ;
+     // 获取ScriptA所附加的游戏对象的引用
+    public bool special = false;
+    SpriteRenderer spriteRenderer;
+        
+    void Start(){
+        //initialization
+        rb = GetComponent<Rigidbody2D>(); 
+        rectTransform = GetComponent<RectTransform>();
+        animator = GetComponent<Animator>() ;
+        collider2D = GetComponent<Collider2D >() ;
+        spriteRenderer = GetComponent<SpriteRenderer>() ;
+        
+    }
+
+    void Update(){
+        //移动
+        rb.velocity = new Vector2(realSpeed,rb.velocity.y) ;
+        //条件
+        if (!groundchecker){
+            mode = 0 ;
+        }
+        else  if (mode == 0 && groundchecker){
+            mode = 1 ;
+            realSpeed = setSpeed ;
+        }
+        else if (mode == 1 && GetHitObject(gameObject,floor,FixerSet(gameObject).downfixer) == GetHitObject(player,floor,FixerSet(player).downfixer) && !DistanceChecker(0.3f) && !special){
+            StartCoroutine(ModeSwitch(2)) ;
+            realSpeed = setSpeed ;
+        }
+        else if (mode == 2 && DistanceChecker(0.3f) ){
+           mode = 2.25f ;
+        }
+        else if(mode == 2.25f){
+             StartCoroutine (WaitFor (2,ModeSwitch(3))) ;
+        }
+        else if (mode == 3){
+            StartCoroutine(WaitFor (5,Reload(5,setSpeed * 0.2f))) ;
+            }
+        IEnumerator Reload (float during,float speed){
+            special = true ;
+            if (math.abs(realSpeed) != speed){
+                realSpeed = speed ;
+            }
+            mode = 1;
+            yield return new WaitForSeconds(during) ;
+            special = false ;
+        }
+        
+        //主态
+        switch (mode)
+        {
+            case 0:
+                //此处有掉落动画
+                realSpeed = 0 ;
+                Rebounder (rectTransform.position ,floor,wall,raycastLength,FixerSet(gameObject).rightfixer,FixerSet(gameObject).leftfixer,FixerSet(gameObject).downfixer );
+            break ;
+            case 1: //MOving Mode
+                animator.Play("Moving") ;
+                Rebounder (rectTransform.position ,floor,wall,raycastLength,FixerSet(gameObject).rightfixer,FixerSet(gameObject).leftfixer,FixerSet(gameObject).downfixer);
+            break;
+            case 1.5f :
+                realSpeed = 0 ;
+                animator .Play("Transform_Water") ;
+            break ;
+            case 2: //Targeting Mode
+                animator.Play("Targeting");
+                Approachplayer (1.5f,rectTransform.position ,player.GetComponent<RectTransform>().position ) ;
+            break;
+            case 2.25f:
+                realSpeed = 0;
+                // 攻击前摇动画
+            break ;
+            case 2.5f :
+                realSpeed = 0 ;
+                animator.Play("Transform_Ice") ;
+            break ;
+            case 3 ://Flashing Mode
+                realSpeed = 0 ;
+                animator.Play("Ice_Flash");
+            break ;
+            default:
+                Debug.Log ("something went wrong with mode") ;
+            break ;
+        }
+    }
+    //fuctiongs
+    bool DistanceChecker (float distance){
+        return (math.abs(rectTransform.position.x - player.GetComponent<RectTransform>().position.x) <= distance) ;
+    }
+    void Approachplayer(float speedtimes,Vector2 catcherposition,Vector2 playerposition){
+        float distance ;
+        float  direction ;
+        // direction
+        distance = catcherposition.x - playerposition.x ;
+        
+        direction = distance /math.abs(distance) ;
+        //speed up
+        if (math.abs(distance) <= 0.3f){
+            realSpeed = 1 ;
+        }
+        else{
+            realSpeed = speedtimes * setSpeed ;
+        }
+        
+        // check and change the speed
+        if (realSpeed * direction > 0){
+            realSpeed = -1 * realSpeed ;
+        }
+    }
+    public void Rebounder(Vector2  raycastOrigin,LayerMask obstacleLayerMask_floor,LayerMask obstacleLayerMask_wall ,float raycastDistance = 3.0f,float leftfixer = 0,float rightfixer = 0,float verticalfixer = 0){
+        Debug.Log("Rebounder is on") ;
+        //激光发射
+        RaycastHit2D hitLeft_Down = Physics2D.Raycast(raycastOrigin + Vector2.left * leftfixer + Vector2.down *verticalfixer, Vector2.down, raycastDistance, obstacleLayerMask_floor);
+        RaycastHit2D hitRight_Down = Physics2D.Raycast(raycastOrigin + Vector2.right * rightfixer + Vector2.down *verticalfixer, Vector2.down, raycastDistance, obstacleLayerMask_floor);
+        RaycastHit2D hitLeft = Physics2D.Raycast(raycastOrigin + Vector2.left * leftfixer + Vector2.down *verticalfixer,  new Vector2(-1,0) , raycastDistance, obstacleLayerMask_wall);
+        RaycastHit2D hitRight = Physics2D.Raycast(raycastOrigin + Vector2.right * rightfixer + Vector2.down *verticalfixer, new Vector2(1,0), raycastDistance, obstacleLayerMask_wall);
+        
+        Debug.DrawRay(raycastOrigin + Vector2.left * leftfixer + Vector2.down *verticalfixer, Vector2.down * raycastDistance, Color.red);
+        Debug.DrawRay(raycastOrigin + Vector2.right * rightfixer + Vector2.down *verticalfixer, Vector2.down * raycastDistance, Color.red);
+        // 检测左侧是否有阻挡物
+        if (hitLeft.collider != null || hitLeft_Down.collider == null )
+        {
+            if (realSpeed <= 0)
+            {
+                realSpeed = -realSpeed;// 改变移动方向
+                spriteRenderer.flipX = false;
+            }
+        }
+        // 检测右侧是否有阻挡物
+        else if (hitRight.collider != null || hitRight_Down.collider == null)
+        {
+            if (realSpeed >= 0)
+            {
+                realSpeed = -realSpeed;// 改变移动方向
+                spriteRenderer.flipX = true;
+            }
+        }
+        //检测落地情况
+        if (hitLeft_Down.collider != null || hitRight_Down.collider != null ){
+            groundchecker = true ;
+        }
+        else{
+            groundchecker = false ;
+        }
+    }
+    GameObject GetHitObject(GameObject Tester,LayerMask obstacleLayerMask,float downfixer = 0f){
+    if (Tester == null){
+        return null;
+    }
+    else{
+        RaycastHit2D hit = Physics2D.Raycast(Tester.transform.position + Vector3.down * downfixer , Vector3.down, 0.5f, obstacleLayerMask);
+        Debug.DrawRay(Tester.transform.position + Vector3.down * downfixer , Vector3.down*0.3f);
+
+        if (hit.collider == null ){
+          return empty ;  
+        }
+        else {
+            return hit.collider.gameObject ;
+        }
+    }
+    }
+    public class Fixer{
+        public float rightfixer;
+        public float leftfixer ;
+        public float downfixer;
+        public Fixer (float a,float b,float c){
+            rightfixer = a ;
+            leftfixer = b;
+            downfixer = c ;
+        }
+    }
+    public Fixer FixerSet(GameObject Target)
+        {
+            float rightfixer = Target.transform.position.x - Target.GetComponent<Collider2D >().bounds.min.x ;
+            float leftfixer = Target.GetComponent<Collider2D >().bounds.max.x - Target.GetComponent<RectTransform>().position.x ;
+            float downfixer = Target.GetComponent<RectTransform>().position.y - Target.GetComponent<Collider2D >().bounds.min.y ;
+            Fixer obj = new Fixer(rightfixer, leftfixer, downfixer);
+            return obj;
+        }
+    IEnumerator ModeSwitch(float preset,float extraltime = 0,float switchinterval = 0.5f){
+        if (mode != preset){
+            mode = preset - switchinterval ;             
+            AnimationClip currentClip = animator.GetCurrentAnimatorClipInfo(0)[0].clip;
+            yield return new WaitForSeconds(currentClip.length + extraltime) ;
+            mode = preset ;
+        }
+    }
+
+    IEnumerator WaitFor(float time ,IEnumerator postenumerator = null, Action postfunction = null,IEnumerator preenumerator = null ,Action prefunction = null){
+        if (preenumerator != null){
+            StartCoroutine (preenumerator) ;
+        }
+        if (prefunction != null){
+            prefunction() ;
+        }
+        yield return new WaitForSeconds(time) ;
+        if (postenumerator != null){
+            StartCoroutine (postenumerator) ;
+        }
+        if (postfunction != null){
+            postfunction() ;
+        }
+    }
+}
